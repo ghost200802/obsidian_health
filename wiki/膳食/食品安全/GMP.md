@@ -1,6 +1,7 @@
 ---
 type: concept
-created: 2026-06-03
+
+updated: 2026-06-05
 tags:
   - 食品安全
   - 食品卫生
