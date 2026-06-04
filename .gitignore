@@ -1,0 +1,19 @@
+# Raw PDFs (large files)
+raw/
+
+# Temporary files
+.tmp_pages/
+
+# Obsidian config
+.obsidian/
+
+# Uploads
+.uploads/
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Trash
+.trash/
