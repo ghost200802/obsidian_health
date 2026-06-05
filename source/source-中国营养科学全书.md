@@ -5,6 +5,8 @@ title: 中国营养科学全书（第2版）
 authors: [杨月欣, 葛可佑]
 publisher: 人民卫生出版社
 pages: 5432
+updated: 2026-06-05
+raw_path: raw/中国营养学会/中国营养科学全书：全2册（第2版） (杨月欣，葛可佑) (Z-Library).pdf
 tags:
   - 营养科学
   - 大型参考书

@@ -5,7 +5,8 @@ author: 蔡东联（主编）
 pages: 1567
 size: 54.7MB
 created: 2026-06-02
-updated: 2026-06-03
+updated: 2026-06-05
+raw_path: raw/中国营养学会/实用营养师手册 (Pdg2Pic, 蔡东联主编) (z-library.sk, 1lib.sk, z-lib.sk).pdf
 tags:
   - source
   - 营养师

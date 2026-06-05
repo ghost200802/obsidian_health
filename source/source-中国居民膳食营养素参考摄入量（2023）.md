@@ -5,6 +5,8 @@ author: 中国营养学会
 pages: 655
 size: 63.6MB
 created: 2026-06-02
+updated: 2026-06-05
+raw_path: raw/中国营养学会/中国居民膳食营养素参考摄入量（2023） (中国营养学会) (Z-Library).pdf
 tags:
   - source
   - DRIs
