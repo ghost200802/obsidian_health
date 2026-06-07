@@ -150,6 +150,27 @@ def write_exception(source_path: Path, message: str) -> Path:
     return output_path
 
 
+def write_skip_record(source_path: Path, message: str) -> Path:
+    output_path = exception_path_for(source_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    content = "\n".join(
+        [
+            f"# Conversion Skipped",
+            "",
+            f"- generated_at: {now_iso()}",
+            f"- source: {source_path}",
+            f"- source_rel_path: {source_path.relative_to(REPO_ROOT)}",
+            "",
+            "## Message",
+            "",
+            message.strip(),
+            "",
+        ]
+    )
+    output_path.write_text(content, encoding="utf-8")
+    return output_path
+
+
 def clear_exception(source_path: Path) -> None:
     output_path = exception_path_for(source_path)
     if output_path.exists():
@@ -394,7 +415,15 @@ def derive_one(
         return result
 
     if kind == "legacy_doc_extract":
-        message = "DOC extraction needs a stable DOC -> DOCX conversion step before MinerU."
+        message = "DOC files are intentionally skipped in the Raw main pipeline; handle them separately."
+        skip_path = write_skip_record(source_path, message)
+        return {
+            "source": str(source_path),
+            "kind": kind,
+            "status": "skipped",
+            "skip_record": str(skip_path),
+            "message": message,
+        }
     else:
         message = f"Unsupported file type: {source_path.suffix.lower()}"
 
@@ -432,6 +461,7 @@ def main() -> int:
     exit_code = 0
     total_files = len(args.paths)
     failed_files = 0
+    skipped_files = 0
     files_completed = 0
 
     write_progress(
@@ -442,6 +472,7 @@ def main() -> int:
             "files_total": total_files,
             "files_completed": 0,
             "failed_files": 0,
+            "skipped_files": 0,
             "current_file_index": None,
             "current_source": None,
             "current_kind": None,
@@ -459,6 +490,7 @@ def main() -> int:
                 "files_total": total_files,
                 "files_completed": files_completed,
                 "failed_files": failed_files,
+                "skipped_files": skipped_files,
                 "current_file_index": index,
                 "current_source": str(source_path),
                 "current_kind": current_kind,
@@ -495,6 +527,8 @@ def main() -> int:
         if result.get("status") == "failed":
             exit_code = 1
             failed_files += 1
+        elif result.get("status") == "skipped":
+            skipped_files += 1
         results.append(result)
         files_completed += 1
         existing_progress = read_json_file(progress_path)
@@ -506,6 +540,7 @@ def main() -> int:
                 "files_total": total_files,
                 "files_completed": files_completed,
                 "failed_files": failed_files,
+                "skipped_files": skipped_files,
                 "current_file_index": index,
                 "current_source": result.get("source"),
                 "current_kind": result.get("kind"),
@@ -526,6 +561,7 @@ def main() -> int:
             "files_total": total_files,
             "files_completed": files_completed,
             "failed_files": failed_files,
+            "skipped_files": skipped_files,
             "current_file_index": total_files if total_files else None,
             "current_source": results[-1]["source"] if results else None,
             "current_kind": results[-1]["kind"] if results else None,

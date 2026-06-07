@@ -70,6 +70,7 @@ $summary = [ordered]@{
     files_total = if ($progress) { $progress.files_total } else { $null }
     files_completed = if ($progress) { $progress.files_completed } else { $null }
     failed_files = if ($progress) { $progress.failed_files } else { $null }
+    skipped_files = if ($progress) { $progress.skipped_files } else { $null }
     current_file_index = if ($progress) { $progress.current_file_index } else { $null }
     current_source = if ($progress) { $progress.current_source } else { $null }
     current_kind = if ($progress) { $progress.current_kind } else { $null }
