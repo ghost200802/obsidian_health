@@ -149,6 +149,12 @@ def write_exception(source_path: Path, message: str) -> Path:
     return output_path
 
 
+def clear_exception(source_path: Path) -> None:
+    output_path = exception_path_for(source_path)
+    if output_path.exists():
+        output_path.unlink()
+
+
 def run_command(command: list[str]) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         command,
@@ -326,7 +332,7 @@ def derive_one(
     kind = derive_kind(source_path)
 
     if kind == "pdf_extract":
-        return {
+        result = {
             "source": str(source_path),
             "kind": kind,
             **run_pdf(
@@ -339,8 +345,12 @@ def derive_one(
                 files_completed=files_completed,
             ),
         }
+        clear_exception(source_path)
+        return result
     if kind in {"doc_extract", "image_extract"}:
-        return {"source": str(source_path), "kind": kind, **run_mineru(source_path, force)}
+        result = {"source": str(source_path), "kind": kind, **run_mineru(source_path, force)}
+        clear_exception(source_path)
+        return result
 
     if kind == "epub_extract":
         message = "EPUB extraction pipeline is not implemented yet."

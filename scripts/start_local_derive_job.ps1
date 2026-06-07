@@ -98,7 +98,7 @@ param(
     [string]`$ArgsFilePath
 )
 
-`$ScriptArgs = Get-Content -LiteralPath `$ArgsFilePath
+`$ScriptArgs = Get-Content -LiteralPath `$ArgsFilePath -Encoding UTF8
 & `$PythonExe @ScriptArgs
 `$LASTEXITCODE | Set-Content -LiteralPath `$ExitCodePath -Encoding ASCII
 exit `$LASTEXITCODE

@@ -26,9 +26,9 @@ $stdoutPath = Join-Path $JobDir "stdout.log"
 $stderrPath = Join-Path $JobDir "stderr.log"
 $exitCodePath = Join-Path $JobDir "exit_code.txt"
 
-$job = Get-Content -LiteralPath $jobPath -Raw | ConvertFrom-Json
+$job = Get-Content -LiteralPath $jobPath -Raw -Encoding UTF8 | ConvertFrom-Json
 $progress = if (Test-Path -LiteralPath $progressPath) {
-    Get-Content -LiteralPath $progressPath -Raw | ConvertFrom-Json
+    Get-Content -LiteralPath $progressPath -Raw -Encoding UTF8 | ConvertFrom-Json
 } else {
     $null
 }
@@ -82,17 +82,17 @@ $summary = [ordered]@{
 }
 
 if (Test-Path -LiteralPath $exitCodePath) {
-    $summary["exit_code"] = (Get-Content -LiteralPath $exitCodePath -Raw).Trim()
+    $summary["exit_code"] = (Get-Content -LiteralPath $exitCodePath -Raw -Encoding ASCII).Trim()
 }
 
 if ($ShowLogs) {
     $summary["stdout_tail"] = if (Test-Path -LiteralPath $stdoutPath) {
-        Get-Content -LiteralPath $stdoutPath -Tail 20
+        Get-Content -LiteralPath $stdoutPath -Tail 20 -Encoding UTF8
     } else {
         @()
     }
     $summary["stderr_tail"] = if (Test-Path -LiteralPath $stderrPath) {
-        Get-Content -LiteralPath $stderrPath -Tail 20
+        Get-Content -LiteralPath $stderrPath -Tail 20 -Encoding UTF8
     } else {
         @()
     }
