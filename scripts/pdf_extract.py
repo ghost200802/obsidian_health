@@ -45,6 +45,15 @@ def write_json_file(path: Path, payload: dict[str, object]) -> None:
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
+def read_json_file(path: Path | None) -> dict[str, object] | None:
+    if path is None or not path.is_file():
+        return None
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+
+
 def write_progress(
     progress_path: Path | None,
     *,
@@ -64,12 +73,16 @@ def write_progress(
 ) -> None:
     if progress_path is None:
         return
+    existing = read_json_file(progress_path) or {}
     payload = {
+        **existing,
         "updated_at": datetime.now().astimezone().isoformat(timespec="seconds"),
         "status": status,
         "phase": phase,
         "source": str(pdf_path),
         "source_rel_path": str(pdf_path.relative_to(REPO_ROOT)) if pdf_path.is_relative_to(REPO_ROOT) else None,
+        "current_source": str(pdf_path),
+        "current_kind": existing.get("current_kind") or "pdf_extract",
         "strategy": strategy,
         "page_from": page_from,
         "page_to": page_to,
