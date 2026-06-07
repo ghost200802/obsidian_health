@@ -18,6 +18,7 @@ DERIVED_ROOT = REPO_ROOT / ".derived"
 MINERU_EXE = REPO_ROOT / ".venv-mineru" / "Scripts" / "mineru.exe"
 MINERU_PYTHON = REPO_ROOT / ".venv-mineru" / "Scripts" / "python.exe"
 PDF_SCRIPT = REPO_ROOT / "scripts" / "pdf_extract.py"
+EPUB_SCRIPT = REPO_ROOT / "scripts" / "epub_extract.py"
 
 PDF_EXTENSIONS = {".pdf"}
 DOC_EXTENSIONS = {".docx"}
@@ -319,6 +320,42 @@ def run_mineru(source_path: Path, force: bool) -> dict[str, object]:
     }
 
 
+def run_epub(source_path: Path, force: bool) -> dict[str, object]:
+    target_dir = target_dir_for(source_path)
+    manifest_path = target_dir / "manifest.json"
+    if not force and manifest_is_fresh(manifest_path, source_path):
+        return {
+            "status": "fresh",
+            "target_dir": str(target_dir),
+            "markdown": str(target_dir / "full.md"),
+            "json": str(target_dir / "full.json"),
+            "manifest": str(manifest_path),
+        }
+
+    command = [
+        str(MINERU_PYTHON),
+        str(EPUB_SCRIPT),
+        str(source_path),
+        "--cache-root",
+        str(DERIVED_ROOT / "epub_extract"),
+        "--json",
+    ]
+    if force:
+        command.append("--force")
+    result = run_command(command)
+    if result.returncode != 0:
+        raise RuntimeError(result.stderr.strip() or result.stdout.strip() or "epub_extract failed")
+
+    payload = json.loads(result.stdout)
+    return {
+        "status": payload["cache_status"],
+        "target_dir": str(target_dir),
+        "markdown": str(target_dir / "full.md"),
+        "json": str(target_dir / "full.json"),
+        "manifest": str(manifest_path),
+    }
+
+
 def derive_one(
     source_arg: str,
     force: bool,
@@ -351,10 +388,12 @@ def derive_one(
         result = {"source": str(source_path), "kind": kind, **run_mineru(source_path, force)}
         clear_exception(source_path)
         return result
-
     if kind == "epub_extract":
-        message = "EPUB extraction pipeline is not implemented yet."
-    elif kind == "legacy_doc_extract":
+        result = {"source": str(source_path), "kind": kind, **run_epub(source_path, force)}
+        clear_exception(source_path)
+        return result
+
+    if kind == "legacy_doc_extract":
         message = "DOC extraction needs a stable DOC -> DOCX conversion step before MinerU."
     else:
         message = f"Unsupported file type: {source_path.suffix.lower()}"

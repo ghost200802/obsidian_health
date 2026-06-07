@@ -135,8 +135,8 @@ python scripts/pdf_extract.py cache "<raw文件>"
 
 ### 当前主流程适用边界
 
-- 可直接进入主流程的格式：`.pdf`、`.docx`、`.jpg`、`.jpeg`、`.png`
-- 当前尚未补齐稳定成功链路的格式：`.doc`、`.epub`
+- 可直接进入主流程的格式：`.pdf`、`.docx`、`.jpg`、`.jpeg`、`.png`、`.epub`
+- 当前尚未补齐稳定成功链路的格式：`.doc`
 - 对后者，当前阶段的标准做法是先留异常记录，不与主流程成败混淆
 
 ## 分阶段执行计划
@@ -289,7 +289,6 @@ python scripts/pdf_extract.py cache "<raw文件>"
 当前还需要单独补强的部分：
 
 - DOC 到 DOCX 的稳定转换链
-- EPUB 到 Markdown 的稳定提取链
 - MinerU 输出目录与仓库镜像目录的统一包装脚本
 
 因此，最稳妥的推进方式是：
