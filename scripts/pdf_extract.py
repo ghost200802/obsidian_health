@@ -10,6 +10,7 @@ import sys
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
+from shutil import copyfile
 from typing import Iterable
 
 import numpy as np
@@ -237,6 +238,15 @@ def build_cache_paths(
     return markdown_path, json_path
 
 
+def build_standard_output_paths(
+    pdf_path: Path,
+    cache_root: Path,
+) -> tuple[Path, Path, Path]:
+    cache_key = build_cache_key(pdf_path)
+    cache_dir = cache_root / cache_key.parent / cache_key.stem
+    return cache_dir / "full.md", cache_dir / "full.json", cache_dir / "manifest.json"
+
+
 def build_json_payload(
     pdf_path: Path,
     pages: Iterable[PageExtraction],
@@ -343,6 +353,41 @@ def cache_document(
             ocr_scale=ocr_scale,
             markdown_path=markdown_path,
         ):
+            full_markdown_path, full_json_path, manifest_path = build_standard_output_paths(
+                pdf_path=pdf_path,
+                cache_root=cache_root,
+            )
+            if payload.get("page_from") == 1 and payload.get("page_to") is None:
+                full_markdown_path.parent.mkdir(parents=True, exist_ok=True)
+                if not full_markdown_path.exists() and markdown_path.exists():
+                    copyfile(markdown_path, full_markdown_path)
+                if not full_json_path.exists() and json_path.exists():
+                    copyfile(json_path, full_json_path)
+                if not manifest_path.exists():
+                    manifest_payload = {
+                        "source": payload.get("source"),
+                        "source_rel_path": payload.get("source_rel_path"),
+                        "source_type": "pdf",
+                        "source_size": payload.get("source_size"),
+                        "source_mtime_ns": payload.get("source_mtime_ns"),
+                        "generated_at": payload.get("generated_at"),
+                        "status": "success",
+                        "tool": {
+                            "name": "pdf_extract.py",
+                            "strategy": payload.get("strategy"),
+                            "min_text_chars": payload.get("min_text_chars"),
+                            "ocr_scale": payload.get("ocr_scale"),
+                        },
+                        "artifacts": {
+                            "markdown": str(full_markdown_path),
+                            "json": str(full_json_path),
+                            "compat_markdown": str(markdown_path),
+                            "compat_json": str(json_path),
+                        },
+                        "pages_extracted": payload.get("pages_extracted"),
+                        "stats": payload.get("stats"),
+                    }
+                    write_output(json.dumps(manifest_payload, ensure_ascii=False, indent=2) + "\n", manifest_path)
             return payload, markdown_path, json_path, "fresh"
 
     pages, stats = extract_document(
@@ -368,6 +413,37 @@ def cache_document(
     )
     write_output(markdown_content, markdown_path)
     write_output(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", json_path)
+    full_markdown_path, full_json_path, manifest_path = build_standard_output_paths(
+        pdf_path=pdf_path,
+        cache_root=cache_root,
+    )
+    if page_from == 1 and page_to is None:
+        write_output(markdown_content, full_markdown_path)
+        write_output(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", full_json_path)
+    manifest_payload = {
+        "source": str(pdf_path),
+        "source_rel_path": payload.get("source_rel_path"),
+        "source_type": "pdf",
+        "source_size": payload.get("source_size"),
+        "source_mtime_ns": payload.get("source_mtime_ns"),
+        "generated_at": payload.get("generated_at"),
+        "status": "success",
+        "tool": {
+            "name": "pdf_extract.py",
+            "strategy": strategy,
+            "min_text_chars": min_text_chars,
+            "ocr_scale": ocr_scale,
+        },
+        "artifacts": {
+            "markdown": str(full_markdown_path) if page_from == 1 and page_to is None else str(markdown_path),
+            "json": str(full_json_path) if page_from == 1 and page_to is None else str(json_path),
+            "compat_markdown": str(markdown_path),
+            "compat_json": str(json_path),
+        },
+        "pages_extracted": payload.get("pages_extracted"),
+        "stats": payload.get("stats"),
+    }
+    write_output(json.dumps(manifest_payload, ensure_ascii=False, indent=2) + "\n", manifest_path)
     return payload, markdown_path, json_path, "written"
 
 
