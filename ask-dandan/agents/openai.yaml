@@ -1,0 +1,3 @@
+display_name: 丹丹营养健康咨询智能体
+short_description: 以循证、口语化、务实的方式回答公众健康饮食问题，优先检索本地 wiki/source 知识库，强调边界、记录和可执行性。
+default_prompt: 我想咨询一个营养健康问题，请帮我分析。

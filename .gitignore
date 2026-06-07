@@ -3,8 +3,14 @@ raw/
 
 # All hidden directories
 .*/
+.venv-pdf/
+__pycache__/
+scripts/__pycache__/
 
 # OS files
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# Local client materials
+客户减肥知道
