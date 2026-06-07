@@ -40,6 +40,50 @@ def normalize_text(text: str) -> str:
     return "\n".join(lines).strip()
 
 
+def write_json_file(path: Path, payload: dict[str, object]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+
+def write_progress(
+    progress_path: Path | None,
+    *,
+    status: str,
+    phase: str,
+    pdf_path: Path,
+    total_pages: int,
+    processed_pages: int,
+    current_page: int | None,
+    strategy: str,
+    page_from: int,
+    page_to: int | None,
+    files_total: int | None = None,
+    current_file_index: int | None = None,
+    files_completed: int | None = None,
+    method: str | None = None,
+) -> None:
+    if progress_path is None:
+        return
+    payload = {
+        "updated_at": datetime.now().astimezone().isoformat(timespec="seconds"),
+        "status": status,
+        "phase": phase,
+        "source": str(pdf_path),
+        "source_rel_path": str(pdf_path.relative_to(REPO_ROOT)) if pdf_path.is_relative_to(REPO_ROOT) else None,
+        "strategy": strategy,
+        "page_from": page_from,
+        "page_to": page_to,
+        "total_pages": total_pages,
+        "processed_pages": processed_pages,
+        "current_page": current_page,
+        "files_total": files_total,
+        "current_file_index": current_file_index,
+        "files_completed": files_completed,
+        "method": method,
+    }
+    write_json_file(progress_path, payload)
+
+
 def build_page_indices(page_count: int, page_from: int, page_to: int | None) -> list[int]:
     start = max(1, page_from)
     end = page_count if page_to is None else min(page_count, page_to)
@@ -115,6 +159,11 @@ def extract_document(
     page_to: int | None,
     min_text_chars: int,
     ocr_scale: float,
+    progress_path: Path | None = None,
+    progress_every_pages: int = 10,
+    files_total: int | None = None,
+    current_file_index: int | None = None,
+    files_completed: int | None = None,
 ) -> tuple[list[PageExtraction], dict[str, int]]:
     reader = PdfReader(str(pdf_path))
     renderer = pdfium.PdfDocument(str(pdf_path))
@@ -123,6 +172,23 @@ def extract_document(
 
     results: list[PageExtraction] = []
     stats = {"text": 0, "ocr": 0, "empty": 0}
+    total_pages = len(page_indices)
+
+    write_progress(
+        progress_path,
+        status="running",
+        phase="extracting_pdf",
+        pdf_path=pdf_path,
+        total_pages=total_pages,
+        processed_pages=0,
+        current_page=None,
+        strategy=strategy,
+        page_from=page_from,
+        page_to=page_to,
+        files_total=files_total,
+        current_file_index=current_file_index,
+        files_completed=files_completed,
+    )
 
     for page_index in page_indices:
         text_layer = extract_text_layer(reader.pages[page_index])
@@ -163,6 +229,40 @@ def extract_document(
                 text_chars=text_chars,
             )
         )
+
+        if len(results) % max(1, progress_every_pages) == 0 or len(results) == total_pages:
+            write_progress(
+                progress_path,
+                status="running",
+                phase="extracting_pdf",
+                pdf_path=pdf_path,
+                total_pages=total_pages,
+                processed_pages=len(results),
+                current_page=page_index + 1,
+                strategy=strategy,
+                page_from=page_from,
+                page_to=page_to,
+                files_total=files_total,
+                current_file_index=current_file_index,
+                files_completed=files_completed,
+                method=method,
+            )
+
+    write_progress(
+        progress_path,
+        status="completed",
+        phase="pdf_done",
+        pdf_path=pdf_path,
+        total_pages=total_pages,
+        processed_pages=total_pages,
+        current_page=page_indices[-1] + 1 if page_indices else None,
+        strategy=strategy,
+        page_from=page_from,
+        page_to=page_to,
+        files_total=files_total,
+        current_file_index=current_file_index,
+        files_completed=files_completed,
+    )
 
     return results, stats
 
@@ -333,6 +433,11 @@ def cache_document(
     min_text_chars: int,
     ocr_scale: float,
     force: bool,
+    progress_path: Path | None = None,
+    progress_every_pages: int = 10,
+    files_total: int | None = None,
+    current_file_index: int | None = None,
+    files_completed: int | None = None,
 ) -> tuple[dict[str, object], Path, Path, str]:
     markdown_path, json_path = build_cache_paths(
         pdf_path=pdf_path,
@@ -353,6 +458,28 @@ def cache_document(
             ocr_scale=ocr_scale,
             markdown_path=markdown_path,
         ):
+            total_pages = int(payload.get("pages_extracted", 0))
+            current_page = None
+            pages = payload.get("pages")
+            if isinstance(pages, list) and pages:
+                last_page = pages[-1]
+                if isinstance(last_page, dict):
+                    current_page = last_page.get("page_number")
+            write_progress(
+                progress_path,
+                status="completed",
+                phase="cache_hit",
+                pdf_path=pdf_path,
+                total_pages=total_pages,
+                processed_pages=total_pages,
+                current_page=current_page,
+                strategy=strategy,
+                page_from=page_from,
+                page_to=page_to,
+                files_total=files_total,
+                current_file_index=current_file_index,
+                files_completed=files_completed,
+            )
             full_markdown_path, full_json_path, manifest_path = build_standard_output_paths(
                 pdf_path=pdf_path,
                 cache_root=cache_root,
@@ -397,6 +524,11 @@ def cache_document(
         page_to=page_to,
         min_text_chars=min_text_chars,
         ocr_scale=ocr_scale,
+        progress_path=progress_path,
+        progress_every_pages=progress_every_pages,
+        files_total=files_total,
+        current_file_index=current_file_index,
+        files_completed=files_completed,
     )
     markdown_content = format_text_output(pdf_path, pages, stats)
     payload = build_json_payload(
@@ -515,6 +647,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     cache_parser.add_argument("--force", action="store_true", help="Ignore fresh cache and re-extract.")
     cache_parser.add_argument("--json", action="store_true", help="Emit JSON summary.")
+    cache_parser.add_argument("--progress-path", help="Optional JSON file to receive compact progress updates.")
+    cache_parser.add_argument("--progress-every-pages", type=int, default=10, help="Write progress every N processed pages.")
+    cache_parser.add_argument("--files-total", type=int, help="Optional total file count for job-level progress.")
+    cache_parser.add_argument("--current-file-index", type=int, help="Optional 1-based file index for job-level progress.")
+    cache_parser.add_argument("--files-completed", type=int, help="Optional completed file count before this PDF starts.")
 
     return parser
 
@@ -586,6 +723,11 @@ def main() -> int:
             min_text_chars=args.min_text_chars,
             ocr_scale=args.ocr_scale,
             force=args.force,
+            progress_path=Path(args.progress_path).expanduser().resolve() if args.progress_path else None,
+            progress_every_pages=args.progress_every_pages,
+            files_total=args.files_total,
+            current_file_index=args.current_file_index,
+            files_completed=args.files_completed,
         )
         if args.json:
             sys.stdout.write(

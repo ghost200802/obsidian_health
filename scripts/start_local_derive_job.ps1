@@ -4,8 +4,8 @@ param(
 
     [switch]$Force,
 
-    [ValidateRange(1, 1440)]
-    [int]$SnapshotMinutes = 1
+    [ValidateRange(1, 1000)]
+    [int]$ProgressEveryPages = 10
 )
 
 $ErrorActionPreference = "Stop"
@@ -30,12 +30,12 @@ $null = New-Item -ItemType Directory -Path $jobDir -Force
 
 $stdoutPath = Join-Path $jobDir "stdout.log"
 $stderrPath = Join-Path $jobDir "stderr.log"
-$statusPath = Join-Path $jobDir "status.json"
 $manifestPath = Join-Path $jobDir "job.json"
 $pathsPath = Join-Path $jobDir "paths.txt"
+$argsPath = Join-Path $jobDir "args.txt"
+$progressPath = Join-Path $jobDir "progress.json"
 $exitCodePath = Join-Path $jobDir "exit_code.txt"
 $launcherScriptPath = Join-Path $jobDir "launcher.ps1"
-$watcherScriptPath = Join-Path $jobDir "watcher.ps1"
 
 $resolvedPaths = foreach ($path in $Paths) {
     $resolved = Resolve-Path -LiteralPath $path
@@ -46,39 +46,60 @@ Set-Content -LiteralPath $pathsPath -Value $resolvedPaths -Encoding UTF8
 
 $argumentList = @(
     $deriveScript,
-    "--json"
+    "--json",
+    "--progress-path", $progressPath,
+    "--progress-every-pages", $ProgressEveryPages
 )
 if ($Force) {
     $argumentList += "--force"
 }
 $argumentList += $resolvedPaths
 
+Set-Content -LiteralPath $argsPath -Value $argumentList -Encoding UTF8
+
 $jobPayload = [ordered]@{
     job_id = $jobId
     created_at = (Get-Date).ToString("o")
     repo_root = $repoRoot
+    progress_every_pages = $ProgressEveryPages
     command = [ordered]@{
         python = $pythonExe
         script = $deriveScript
         arguments = $argumentList
     }
     paths_file = $pathsPath
+    args_file = $argsPath
+    progress_file = $progressPath
     stdout_log = $stdoutPath
     stderr_log = $stderrPath
-    status_file = $statusPath
     exit_code_file = $exitCodePath
-    snapshot_minutes = $SnapshotMinutes
 }
 $jobPayload | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $manifestPath -Encoding UTF8
+
+$initialProgress = [ordered]@{
+    updated_at = (Get-Date).ToString("o")
+    status = "queued"
+    phase = "job_created"
+    files_total = $resolvedPaths.Count
+    files_completed = 0
+    failed_files = 0
+    current_file_index = $null
+    current_source = $null
+    total_pages = $null
+    processed_pages = $null
+    current_page = $null
+}
+$initialProgress | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $progressPath -Encoding UTF8
 
 $launcherScript = @"
 param(
     [string]`$PythonExe,
     [string]`$ExitCodePath,
-    [string[]]`$Args
+    [string]`$ArgsFilePath
 )
 
-& `$PythonExe @Args
+`$ScriptArgs = Get-Content -LiteralPath `$ArgsFilePath
+& `$PythonExe @ScriptArgs
 `$LASTEXITCODE | Set-Content -LiteralPath `$ExitCodePath -Encoding ASCII
 exit `$LASTEXITCODE
 "@
@@ -91,9 +112,8 @@ $launcherArgs = @(
     "-File", $launcherScriptPath,
     "-PythonExe", $pythonExe,
     "-ExitCodePath", $exitCodePath,
-    "-Args"
+    "-ArgsFilePath", $argsPath
 )
-$launcherArgs += $argumentList
 
 $deriveProcess = Start-Process -FilePath "powershell.exe" `
     -ArgumentList $launcherArgs `
@@ -103,111 +123,15 @@ $deriveProcess = Start-Process -FilePath "powershell.exe" `
     -PassThru `
     -WindowStyle Hidden
 
-$watcherScript = @"
-param(
-    [int]`$TargetPid,
-    [string]`$StatusPath,
-    [string]`$StdoutPath,
-    [string]`$StderrPath,
-    [string]`$ExitCodePath,
-    [int]`$SnapshotMinutes
-)
-
-`$ErrorActionPreference = "Stop"
-
-function Get-LogInfo {
-    param([string]`$Path)
-    if (Test-Path -LiteralPath `$Path) {
-        `$item = Get-Item -LiteralPath `$Path
-        return @{
-            exists = `$true
-            bytes = `$item.Length
-            updated_at = `$item.LastWriteTime.ToString("o")
-        }
-    }
-    return @{
-        exists = `$false
-        bytes = 0
-        updated_at = `$null
-    }
-}
-
-while (`$true) {
-    `$process = Get-Process -Id `$TargetPid -ErrorAction SilentlyContinue
-    if (`$null -eq `$process) {
-        break
-    }
-
-    `$payload = [ordered]@{
-        checked_at = (Get-Date).ToString("o")
-        status = "running"
-        pid = `$TargetPid
-        stdout = Get-LogInfo -Path `$StdoutPath
-        stderr = Get-LogInfo -Path `$StderrPath
-    }
-    `$payload | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath `$StatusPath -Encoding UTF8
-    Start-Sleep -Seconds ([Math]::Max(60, `$SnapshotMinutes * 60))
-}
-
-`$exitCode = if (Test-Path -LiteralPath `$ExitCodePath) {
-    Get-Content -LiteralPath `$ExitCodePath -Raw
-} else {
-    `$null
-}
-
-`$finalPayload = [ordered]@{
-    checked_at = (Get-Date).ToString("o")
-    status = "finished"
-    pid = `$TargetPid
-    exit_code = `$exitCode
-    stdout = Get-LogInfo -Path `$StdoutPath
-    stderr = Get-LogInfo -Path `$StderrPath
-}
-`$finalPayload | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath `$StatusPath -Encoding UTF8
-"@
-
-Set-Content -LiteralPath $watcherScriptPath -Value $watcherScript -Encoding UTF8
-
-$watcherArgs = @(
-    "-NoProfile",
-    "-ExecutionPolicy", "Bypass",
-    "-File", $watcherScriptPath,
-    "-TargetPid", $deriveProcess.Id,
-    "-StatusPath", $statusPath,
-    "-StdoutPath", $stdoutPath,
-    "-StderrPath", $stderrPath,
-    "-ExitCodePath", $exitCodePath,
-    "-SnapshotMinutes", $SnapshotMinutes
-)
-
-Start-Process -FilePath "powershell.exe" `
-    -ArgumentList $watcherArgs `
-    -WorkingDirectory $repoRoot `
-    -WindowStyle Hidden | Out-Null
-
-$initialStatus = [ordered]@{
-    checked_at = (Get-Date).ToString("o")
-    status = "running"
-    pid = $deriveProcess.Id
-    stdout = @{
-        exists = $false
-        bytes = 0
-        updated_at = $null
-    }
-    stderr = @{
-        exists = $false
-        bytes = 0
-        updated_at = $null
-    }
-}
-$initialStatus | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $statusPath -Encoding UTF8
+$jobPayload["pid"] = $deriveProcess.Id
+$jobPayload | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $manifestPath -Encoding UTF8
 
 [ordered]@{
     job_id = $jobId
     pid = $deriveProcess.Id
     status = "running"
     job_dir = $jobDir
-    status_file = $statusPath
+    progress_file = $progressPath
     stdout_log = $stdoutPath
     stderr_log = $stderrPath
     check_command = ".\scripts\check_local_derive_job.ps1 -JobId $jobId"

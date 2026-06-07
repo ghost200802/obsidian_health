@@ -29,6 +29,26 @@ def now_iso() -> str:
     return datetime.now().astimezone().isoformat(timespec="seconds")
 
 
+def write_json_file(path: Path, payload: dict[str, object]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+
+def read_json_file(path: Path | None) -> dict[str, object] | None:
+    if path is None or not path.is_file():
+        return None
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+
+
+def write_progress(progress_path: Path | None, payload: dict[str, object]) -> None:
+    if progress_path is None:
+        return
+    write_json_file(progress_path, {"updated_at": now_iso(), **payload})
+
+
 def ensure_raw_path(source_path: Path) -> Path:
     resolved = source_path.expanduser().resolve()
     try:
@@ -141,7 +161,15 @@ def run_command(command: list[str]) -> subprocess.CompletedProcess[str]:
     )
 
 
-def run_pdf(source_path: Path, force: bool) -> dict[str, object]:
+def run_pdf(
+    source_path: Path,
+    force: bool,
+    progress_path: Path | None = None,
+    progress_every_pages: int = 10,
+    files_total: int | None = None,
+    current_file_index: int | None = None,
+    files_completed: int | None = None,
+) -> dict[str, object]:
     command = [
         str(MINERU_PYTHON),
         str(PDF_SCRIPT),
@@ -151,6 +179,19 @@ def run_pdf(source_path: Path, force: bool) -> dict[str, object]:
     ]
     if force:
         command.append("--force")
+    if progress_path is not None:
+        command += [
+            "--progress-path",
+            str(progress_path),
+            "--progress-every-pages",
+            str(progress_every_pages),
+        ]
+    if files_total is not None:
+        command += ["--files-total", str(files_total)]
+    if current_file_index is not None:
+        command += ["--current-file-index", str(current_file_index)]
+    if files_completed is not None:
+        command += ["--files-completed", str(files_completed)]
 
     result = run_command(command)
     if result.returncode != 0:
@@ -272,12 +313,32 @@ def run_mineru(source_path: Path, force: bool) -> dict[str, object]:
     }
 
 
-def derive_one(source_arg: str, force: bool) -> dict[str, object]:
+def derive_one(
+    source_arg: str,
+    force: bool,
+    progress_path: Path | None = None,
+    progress_every_pages: int = 10,
+    files_total: int | None = None,
+    current_file_index: int | None = None,
+    files_completed: int | None = None,
+) -> dict[str, object]:
     source_path = ensure_raw_path(Path(source_arg))
     kind = derive_kind(source_path)
 
     if kind == "pdf_extract":
-        return {"source": str(source_path), "kind": kind, **run_pdf(source_path, force)}
+        return {
+            "source": str(source_path),
+            "kind": kind,
+            **run_pdf(
+                source_path,
+                force,
+                progress_path=progress_path,
+                progress_every_pages=progress_every_pages,
+                files_total=files_total,
+                current_file_index=current_file_index,
+                files_completed=files_completed,
+            ),
+        }
     if kind in {"doc_extract", "image_extract"}:
         return {"source": str(source_path), "kind": kind, **run_mineru(source_path, force)}
 
@@ -303,12 +364,15 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("paths", nargs="+", help="One or more raw file paths.")
     parser.add_argument("--force", action="store_true", help="Regenerate even when the manifest is fresh.")
     parser.add_argument("--json", action="store_true", help="Emit JSON results.")
+    parser.add_argument("--progress-path", help="Optional JSON file to receive compact job progress updates.")
+    parser.add_argument("--progress-every-pages", type=int, default=10, help="Write PDF progress every N processed pages.")
     return parser
 
 
 def main() -> int:
     parser = build_parser()
     args = parser.parse_args()
+    progress_path = Path(args.progress_path).expanduser().resolve() if args.progress_path else None
 
     if not MINERU_PYTHON.is_file():
         parser.error(f"Missing Python runtime: {MINERU_PYTHON}")
@@ -317,11 +381,51 @@ def main() -> int:
 
     results = []
     exit_code = 0
-    for source_arg in args.paths:
+    total_files = len(args.paths)
+    failed_files = 0
+    files_completed = 0
+
+    write_progress(
+        progress_path,
+        {
+            "status": "running",
+            "phase": "queued",
+            "files_total": total_files,
+            "files_completed": 0,
+            "failed_files": 0,
+            "current_file_index": None,
+            "current_source": None,
+            "current_kind": None,
+        },
+    )
+
+    for index, source_arg in enumerate(args.paths, start=1):
+        source_path = Path(source_arg).expanduser().resolve()
+        current_kind = derive_kind(source_path) if source_path.exists() else "unknown"
+        write_progress(
+            progress_path,
+            {
+                "status": "running",
+                "phase": "starting_file",
+                "files_total": total_files,
+                "files_completed": files_completed,
+                "failed_files": failed_files,
+                "current_file_index": index,
+                "current_source": str(source_path),
+                "current_kind": current_kind,
+            },
+        )
         try:
-            result = derive_one(source_arg, force=args.force)
+            result = derive_one(
+                source_arg,
+                force=args.force,
+                progress_path=progress_path,
+                progress_every_pages=args.progress_every_pages,
+                files_total=total_files,
+                current_file_index=index,
+                files_completed=files_completed,
+            )
         except Exception as exc:
-            source_path = Path(source_arg).expanduser().resolve()
             if source_path.is_file():
                 exception_path = write_exception(source_path, str(exc))
                 result = {
@@ -341,7 +445,47 @@ def main() -> int:
             exit_code = 1
         if result.get("status") == "failed":
             exit_code = 1
+            failed_files += 1
         results.append(result)
+        files_completed += 1
+        existing_progress = read_json_file(progress_path)
+        write_progress(
+            progress_path,
+            {
+                "status": "running",
+                "phase": "file_finished",
+                "files_total": total_files,
+                "files_completed": files_completed,
+                "failed_files": failed_files,
+                "current_file_index": index,
+                "current_source": result.get("source"),
+                "current_kind": result.get("kind"),
+                "current_result_status": result.get("status"),
+                "total_pages": existing_progress.get("total_pages") if existing_progress else None,
+                "processed_pages": existing_progress.get("processed_pages") if existing_progress else None,
+                "current_page": existing_progress.get("current_page") if existing_progress else None,
+                "method": existing_progress.get("method") if existing_progress else None,
+            },
+        )
+
+    final_progress = read_json_file(progress_path)
+    write_progress(
+        progress_path,
+        {
+            "status": "finished" if exit_code == 0 else "failed",
+            "phase": "job_done",
+            "files_total": total_files,
+            "files_completed": files_completed,
+            "failed_files": failed_files,
+            "current_file_index": total_files if total_files else None,
+            "current_source": results[-1]["source"] if results else None,
+            "current_kind": results[-1]["kind"] if results else None,
+            "total_pages": final_progress.get("total_pages") if final_progress else None,
+            "processed_pages": final_progress.get("processed_pages") if final_progress else None,
+            "current_page": final_progress.get("current_page") if final_progress else None,
+            "method": final_progress.get("method") if final_progress else None,
+        },
+    )
 
     if args.json:
         sys.stdout.write(json.dumps(results, ensure_ascii=False, indent=2) + "\n")
