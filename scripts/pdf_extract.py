@@ -6,6 +6,8 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
+import platform
 import sys
 from dataclasses import dataclass
 from datetime import datetime
@@ -41,8 +43,7 @@ def normalize_text(text: str) -> str:
 
 
 def write_json_file(path: Path, payload: dict[str, object]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    _ensure_dir_and_write(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", path)
 
 
 def read_json_file(path: Path | None) -> dict[str, object] | None:
@@ -304,12 +305,50 @@ def format_text_output(
     return "\n".join(lines).strip() + "\n"
 
 
+def _unc_path(p: Path) -> str | None:
+    r"""Return \\?\ UNC-prefixed path if trailing space detected on Windows."""
+    if platform.system() == "Windows":
+        s = str(p)
+        if s and s[-1] == " ":
+            return "\\\\?\\" + os.path.normpath(s)
+    return None
+
+
+def _path_exists(p: Path) -> bool:
+    """Check existence, handling trailing-space paths on Windows."""
+    unc = _unc_path(p)
+    if unc:
+        return os.path.exists(unc)
+    return p.exists()
+
+
+def _ensure_dir(dir_path: Path) -> None:
+    """Ensure directory exists, handling trailing-space names on Windows."""
+    unc = _unc_path(dir_path)
+    if unc:
+        os.makedirs(unc, exist_ok=True)
+    else:
+        dir_path.mkdir(parents=True, exist_ok=True)
+
+
+def _ensure_dir_and_write(content: str, output_path: Path) -> None:
+    """Write file, handling trailing-space directory names on Windows."""
+    unc = _unc_path(output_path.parent)
+    if unc:
+        os.makedirs(unc, exist_ok=True)
+        file_unc = "\\\\?\\" + os.path.normpath(str(output_path))
+        with open(file_unc, "w", encoding="utf-8") as f:
+            f.write(content)
+    else:
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text(content, encoding="utf-8")
+
+
 def write_output(content: str, output_path: Path | None) -> None:
     if output_path is None:
         sys.stdout.write(content)
         return
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text(content, encoding="utf-8")
+    _ensure_dir_and_write(content, output_path)
 
 
 def load_json_output(output_path: Path) -> dict[str, object] | None:
@@ -498,12 +537,12 @@ def cache_document(
                 cache_root=cache_root,
             )
             if payload.get("page_from") == 1 and payload.get("page_to") is None:
-                full_markdown_path.parent.mkdir(parents=True, exist_ok=True)
-                if not full_markdown_path.exists() and markdown_path.exists():
-                    copyfile(markdown_path, full_markdown_path)
-                if not full_json_path.exists() and json_path.exists():
-                    copyfile(json_path, full_json_path)
-                if not manifest_path.exists():
+                _ensure_dir(full_markdown_path.parent)
+                if not _path_exists(full_markdown_path) and markdown_path.exists():
+                    copyfile(str(markdown_path), str(full_markdown_path))
+                if not _path_exists(full_json_path) and json_path.exists():
+                    copyfile(str(json_path), str(full_json_path))
+                if not _path_exists(manifest_path):
                     manifest_payload = {
                         "source": payload.get("source"),
                         "source_rel_path": payload.get("source_rel_path"),
