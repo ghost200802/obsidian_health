@@ -5,6 +5,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import platform
 import shutil
 import subprocess
 import sys
@@ -123,10 +125,40 @@ def manifest_is_fresh(manifest_path: Path, source_path: Path) -> bool:
     return Path(markdown).is_file() and Path(json_path).is_file()
 
 
+def _unc_path(p: Path) -> str | None:
+    r"""Return \\?\ UNC-prefixed path if trailing space detected on Windows."""
+    if platform.system() == "Windows":
+        s = str(p)
+        if s and s[-1] == " ":
+            return "\\\\?\\" + os.path.normpath(s)
+    return None
+
+
+def _ensure_dir(dir_path: Path) -> None:
+    """Ensure directory exists, handling trailing-space names on Windows."""
+    unc = _unc_path(dir_path)
+    if unc:
+        os.makedirs(unc, exist_ok=True)
+    else:
+        dir_path.mkdir(parents=True, exist_ok=True)
+
+
+def _path_exists(p: Path) -> bool:
+    """Check existence, handling trailing-space paths on Windows."""
+    unc = _unc_path(p)
+    if unc:
+        return os.path.exists(unc)
+    return p.exists()
+
+
 def reset_dir(path: Path) -> None:
-    if path.exists():
-        shutil.rmtree(path)
-    path.mkdir(parents=True, exist_ok=True)
+    if _path_exists(path):
+        unc = _unc_path(path)
+        if unc:
+            shutil.rmtree(unc)
+        else:
+            shutil.rmtree(path)
+    _ensure_dir(path)
 
 
 def write_exception(source_path: Path, message: str) -> Path:
@@ -295,13 +327,27 @@ def run_mineru(source_path: Path, force: bool) -> dict[str, object]:
         }
 
     asset_root = target_dir / "assets" / "mineru_raw"
-    target_dir.mkdir(parents=True, exist_ok=True)
+    _ensure_dir(target_dir)
     reset_dir(asset_root)
+
+    # MinerU can't handle trailing spaces in file names on Windows.
+    # If detected, copy to a temp path without trailing space.
+    effective_source = source_path
+    temp_source = None
+    src_str = str(source_path)
+    dot_idx = src_str.rfind(".")
+    if dot_idx > 0 and src_str[dot_idx - 1] == " ":
+        ext = src_str[dot_idx:]  # includes the dot
+        stem_part = src_str[:dot_idx].rstrip()
+        clean_name = stem_part + ext
+        temp_source = Path(clean_name)
+        shutil.copy2(source_path, temp_source)
+        effective_source = temp_source
 
     command = [
         str(MINERU_EXE),
         "-p",
-        str(source_path),
+        str(effective_source),
         "-o",
         str(asset_root),
         "-b",
@@ -312,6 +358,8 @@ def run_mineru(source_path: Path, force: bool) -> dict[str, object]:
         "ch",
     ]
     result = run_command(command)
+    if temp_source and temp_source.exists():
+        temp_source.unlink()
     if result.returncode != 0:
         raise RuntimeError(result.stderr.strip() or result.stdout.strip() or "mineru failed")
 
