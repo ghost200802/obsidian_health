@@ -262,8 +262,9 @@ def add_cover(document: Document, data: dict[str, Any], report_date: str) -> Non
     document.add_page_break()
 
 
-def add_summary(document: Document, summary: list[str]) -> None:
+def add_summary(document: Document, summary: list[str], profile: list[dict[str, Any]] | None = None) -> None:
     add_section_header(document, "01", "先看结论", "先把最重要的判断放在前面，避免被体检单上的一堆箭头带偏。")
+    add_profile(document, profile or [])
     if summary:
         table = document.add_table(rows=0, cols=2)
         table.alignment = WD_TABLE_ALIGNMENT.CENTER
@@ -285,10 +286,61 @@ def add_summary(document: Document, summary: list[str]) -> None:
         document.add_paragraph()
 
 
+def add_profile(document: Document, profile: list[dict[str, Any]]) -> None:
+    if not profile:
+        return
+    add_text_paragraph(document, "客户摘要", style="Heading 2")
+    table = document.add_table(rows=0, cols=2)
+    table.alignment = WD_TABLE_ALIGNMENT.CENTER
+    for index in range(0, len(profile), 2):
+        row = table.add_row()
+        pair = profile[index : index + 2]
+        for column, item in enumerate(pair):
+            cell = row.cells[column]
+            set_cell_fill(cell, SAND if (index + column) % 2 == 0 else MINT)
+            set_cell_border(cell, WHITE, "0")
+            set_cell_margins(cell, 140, 170, 140, 170)
+            paragraph = cell.paragraphs[0]
+            label = paragraph.add_run(text(item.get("label")) + "\n")
+            set_run_font(label, 8.5, MUTED, True)
+            value = paragraph.add_run(text(item.get("value")))
+            set_run_font(value, 10.5, INK, True)
+        if len(pair) == 1:
+            set_cell_fill(row.cells[1], WHITE)
+            set_cell_border(row.cells[1], WHITE, "0")
+    document.add_paragraph()
+
+
+def add_metrics(document: Document, metrics: list[dict[str, Any]]) -> None:
+    if not metrics:
+        return
+    add_text_paragraph(document, "本次血脂结果", style="Heading 2")
+    table = document.add_table(rows=1, cols=4)
+    table.alignment = WD_TABLE_ALIGNMENT.CENTER
+    for cell, header in zip(table.rows[0].cells, ("指标", "结果", "报告提示", "怎么理解")):
+        set_cell_fill(cell, TEAL_DARK)
+        set_cell_border(cell, TEAL_DARK, "0")
+        set_cell_margins(cell, 120, 120, 120, 120)
+        run = cell.paragraphs[0].add_run(header)
+        set_run_font(run, 9.5, WHITE, True)
+    for index, item in enumerate(metrics):
+        row = table.add_row()
+        values = (text(item.get("name")), text(item.get("value")), text(item.get("status")), text(item.get("meaning")))
+        for cell, value in zip(row.cells, values):
+            set_cell_fill(cell, SAND if index % 2 == 0 else WHITE)
+            set_cell_border(cell, LINE, "4")
+            set_cell_margins(cell, 120, 120, 120, 120)
+            cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.TOP
+            run = cell.paragraphs[0].add_run(value)
+            set_run_font(run, 9, INK)
+    document.add_paragraph()
+
+
 def add_report_content(document: Document, report: dict[str, Any]) -> None:
     add_section_header(document, "02", "体检报告解读", text(report.get("intro")))
     if report.get("conclusion"):
         add_callout(document, "一句话判断", text(report["conclusion"]), fill=MINT, accent=TEAL)
+    add_metrics(document, report.get("metrics", []))
 
     report_sections = report.get("sections", [])
     for section in report_sections:
@@ -364,7 +416,7 @@ def build_docx(data: dict[str, Any], output_path: Path, report_date: str) -> Non
     document = Document()
     style_document(document, text(data.get("brand")) or "健康管理服务", report_date)
     add_cover(document, data, report_date)
-    add_summary(document, list_value(data.get("summary")))
+    add_summary(document, list_value(data.get("summary")), data.get("profile", []))
     add_report_content(document, data.get("report", {}))
     add_plan_content(document, data.get("plan", {}))
     add_notes(document, data)
@@ -385,13 +437,26 @@ def build_html(data: dict[str, Any], output_path: Path, report_date: str) -> Non
     brand = text(data.get("brand")) or "健康管理服务"
     customer = text(data.get("customer_name")) or "客户"
     summary = list_value(data.get("summary"))
+    profile = data.get("profile", [])
     report = data.get("report", {})
     plan = data.get("plan", {})
 
     summary_html = "".join(f'<div class="summary-row"><span>重点 {i + 1}</span><p>{esc(item)}</p></div>' for i, item in enumerate(summary))
+    profile_html = "".join(
+        f'<div class="profile-item"><span>{esc(item.get("label"))}</span><strong>{esc(item.get("value"))}</strong></div>'
+        for item in profile
+    )
+    profile_block = f'<h3>客户摘要</h3><div class="profile">{profile_html}</div>' if profile_html else ""
     report_html = ""
     if report.get("conclusion"):
         report_html += html_callout("一句话判断", report["conclusion"])
+    metrics = report.get("metrics", [])
+    if metrics:
+        rows = "".join(
+            f"<tr><td>{esc(item.get('name'))}</td><td>{esc(item.get('value'))}</td><td>{esc(item.get('status'))}</td><td>{esc(item.get('meaning'))}</td></tr>"
+            for item in metrics
+        )
+        report_html += "<h3>本次血脂结果</h3><table><thead><tr><th>指标</th><th>结果</th><th>报告提示</th><th>怎么理解</th></tr></thead><tbody>" + rows + "</tbody></table>"
     for section in report.get("sections", []):
         report_html += f'<h3>{esc(section.get("title"))}</h3>'
         if section.get("lead"):
@@ -434,14 +499,15 @@ def build_html(data: dict[str, Any], output_path: Path, report_date: str) -> Non
 .brand {{ color:var(--coral); font-weight:700; letter-spacing:.08em; }} h1 {{ color:var(--deep); font-size:42px; line-height:1.25; margin:20px 0 12px; }} h2 {{ color:var(--deep); font-size:28px; margin:42px 0 12px; border-bottom:2px solid var(--mint); padding-bottom:8px; }} h3 {{ color:var(--teal); font-size:19px; margin:28px 0 8px; }} p {{ margin:8px 0 12px; }} .sub {{ color:var(--muted); }}
 .callout {{ border-left:5px solid var(--teal); background:var(--mint); padding:16px 20px; margin:16px 0 20px; }} .callout.sand {{ border-left-color:var(--coral); background:var(--sand); }} .callout strong {{ color:var(--teal); }} .callout.sand strong {{ color:var(--coral); }} .callout p {{ margin:5px 0 0; }}
 .summary {{ margin:18px 0 24px; }} .summary-row {{ display:grid; grid-template-columns:96px 1fr; border-bottom:1px solid #fff; background:var(--sand); }} .summary-row span {{ background:var(--teal); color:#fff; padding:13px 15px; font-weight:700; }} .summary-row p {{ margin:0; padding:13px 17px; }}
+.profile {{ display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; margin:12px 0 24px; }} .profile-item {{ background:var(--sand); padding:12px 15px; }} .profile-item span {{ display:block; color:var(--muted); font-size:12px; }} .profile-item strong {{ color:var(--deep); }}
 ul {{ margin:8px 0 18px; padding-left:24px; }} li {{ margin:6px 0; }} table {{ width:100%; border-collapse:collapse; margin:12px 0 24px; font-size:14px; }} th {{ text-align:left; background:var(--deep); color:#fff; padding:11px 12px; }} td {{ vertical-align:top; border:1px solid var(--line); padding:11px 12px; }} tr:nth-child(even) td {{ background:var(--sand); }} td ul {{ margin:0; padding-left:18px; }} .page-break {{ page-break-before:always; }} .disclaimer {{ margin-top:28px; background:var(--sand); border-left:5px solid var(--coral); padding:14px 18px; color:var(--muted); }} .footer {{ margin-top:48px; text-align:center; color:var(--muted); font-size:12px; }}
-@media print {{ .page {{ padding:0; }} .cover {{ min-height:250mm; }} }}
+@media print {{ .page {{ padding:0; }} .cover {{ min-height:250mm; }} .final-footer {{ display:none; }} }}
 </style></head><body><main class="page">
 <section class="cover"><div class="brand">{esc(brand)}</div><h1>体检报告解读<br>与 1v1 健康管理方案</h1><div class="sub">为 {esc(customer)} 定制 · {esc(report_date)}</div>{html_callout("这份报告想解决的事", text(data.get("cover_subtitle")) or "看懂身体现在的状态，并找到真正做得下去的下一步。", "sand")}<div class="footer">{esc(text(data.get("advisor")) or "健康管理顾问")}</div></section>
-<section><h2>01 · 先看结论</h2><p class="sub">先把最重要的判断放在前面，避免被体检单上的一堆箭头带偏。</p><div class="summary">{summary_html}</div></section>
+<section><h2>01 · 先看结论</h2><p class="sub">先把最重要的判断放在前面，避免被体检单上的一堆箭头带偏。</p>{profile_block}<div class="summary">{summary_html}</div></section>
 <section><h2>02 · 体检报告解读</h2><p class="sub">{esc(report.get("intro"))}</p>{report_html}</section>
 <section class="page-break"><h2>03 · 1v1 定制方案</h2><p class="sub">{esc(plan.get("intro"))}</p>{plan_html}</section>
-<section><h2>04 · 说明</h2>{notes_html}<div class="disclaimer">{esc(disclaimer)}</div><div class="footer">{esc(brand)} · 客户专属健康管理资料 · {esc(report_date)}</div></section>
+<section><h2>04 · 说明</h2>{notes_html}<div class="disclaimer">{esc(disclaimer)}</div><div class="footer final-footer">{esc(brand)} · 客户专属健康管理资料 · {esc(report_date)}</div></section>
 </main></body></html>'''
     output_path.write_text(document, encoding="utf-8")
 
