@@ -492,16 +492,19 @@ def build_html(data: dict[str, Any], output_path: Path, report_date: str) -> Non
 <html lang="zh-CN"><head><meta charset="utf-8"><title>{esc(customer)} - 体检解读与1v1方案</title>
 <style>
 @page {{ size: A4; margin: 18mm 16mm; }}
-:root {{ --ink:#203238; --muted:#5f7074; --teal:#1d6b6a; --deep:#154b4c; --mint:#e9f3f0; --coral:#c65b48; --sand:#f7f5f0; --line:#d7e1df; }}
-* {{ box-sizing:border-box; }} body {{ margin:0; color:var(--ink); background:#fff; font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif; line-height:1.7; font-size:15px; }}
-.page {{ max-width:840px; margin:0 auto; padding:34px 42px 56px; }}
-.cover {{ min-height:980px; display:flex; flex-direction:column; justify-content:center; text-align:center; page-break-after:always; }}
-.brand {{ color:var(--coral); font-weight:700; letter-spacing:.08em; }} h1 {{ color:var(--deep); font-size:42px; line-height:1.25; margin:20px 0 12px; }} h2 {{ color:var(--deep); font-size:28px; margin:42px 0 12px; border-bottom:2px solid var(--mint); padding-bottom:8px; }} h3 {{ color:var(--teal); font-size:19px; margin:28px 0 8px; }} p {{ margin:8px 0 12px; }} .sub {{ color:var(--muted); }}
+:root {{ --ink:#30483b; --muted:#68786e; --teal:#527b63; --deep:#3f6953; --mint:#e7ecdf; --coral:#d65b4d; --sand:#f7f5ed; --sage:#aebda1; --line:#d8ded2; }}
+* {{ box-sizing:border-box; }} body {{ margin:0; color:var(--ink); background:#e9ece6; font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif; line-height:1.72; font-size:15px; letter-spacing:0; }}
+.page {{ max-width:840px; margin:24px auto; padding:42px 56px 64px; background:#fff; box-shadow:0 8px 30px rgba(48,72,59,.10); overflow:hidden; }}
+.cover {{ min-height:920px; display:flex; flex-direction:column; justify-content:center; text-align:left; page-break-after:always; position:relative; padding:70px 26px; }}
+.cover::before {{ content:""; position:absolute; width:210px; height:72px; top:34px; left:-56px; background:var(--deep); transform:skewX(-34deg); }}
+.cover::after {{ content:""; position:absolute; width:320px; height:190px; right:-100px; bottom:20px; background:var(--sage); transform:skewX(-34deg); }}
+.brand {{ color:var(--teal); font-weight:700; text-transform:uppercase; }} h1 {{ max-width:650px; color:var(--deep); font-size:44px; line-height:1.28; margin:24px 0 14px; }} h2 {{ color:var(--deep); font-size:28px; margin:46px 0 14px; border-top:4px solid var(--sage); border-bottom:0; padding-top:12px; }} h3 {{ color:var(--teal); font-size:19px; margin:28px 0 8px; }} p {{ margin:8px 0 12px; }} .sub {{ color:var(--muted); }}
 .callout {{ border-left:5px solid var(--teal); background:var(--mint); padding:16px 20px; margin:16px 0 20px; }} .callout.sand {{ border-left-color:var(--coral); background:var(--sand); }} .callout strong {{ color:var(--teal); }} .callout.sand strong {{ color:var(--coral); }} .callout p {{ margin:5px 0 0; }}
-.summary {{ margin:18px 0 24px; }} .summary-row {{ display:grid; grid-template-columns:96px 1fr; border-bottom:1px solid #fff; background:var(--sand); }} .summary-row span {{ background:var(--teal); color:#fff; padding:13px 15px; font-weight:700; }} .summary-row p {{ margin:0; padding:13px 17px; }}
+.summary {{ margin:18px 0 24px; }} .summary-row {{ display:grid; grid-template-columns:96px 1fr; border-bottom:2px solid #fff; background:var(--sand); }} .summary-row span {{ background:var(--deep); color:#fff; padding:13px 15px; font-weight:700; }} .summary-row p {{ margin:0; padding:13px 17px; }}
 .profile {{ display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; margin:12px 0 24px; }} .profile-item {{ background:var(--sand); padding:12px 15px; }} .profile-item span {{ display:block; color:var(--muted); font-size:12px; }} .profile-item strong {{ color:var(--deep); }}
 ul {{ margin:8px 0 18px; padding-left:24px; }} li {{ margin:6px 0; }} table {{ width:100%; border-collapse:collapse; margin:12px 0 24px; font-size:14px; }} th {{ text-align:left; background:var(--deep); color:#fff; padding:11px 12px; }} td {{ vertical-align:top; border:1px solid var(--line); padding:11px 12px; }} tr:nth-child(even) td {{ background:var(--sand); }} td ul {{ margin:0; padding-left:18px; }} .page-break {{ page-break-before:always; }} .disclaimer {{ margin-top:28px; background:var(--sand); border-left:5px solid var(--coral); padding:14px 18px; color:var(--muted); }} .footer {{ margin-top:48px; text-align:center; color:var(--muted); font-size:12px; }}
-@media print {{ .page {{ padding:0; }} .cover {{ min-height:250mm; }} .final-footer {{ display:none; }} }}
+@media (max-width:680px) {{ body {{ background:#fff; }} .page {{ margin:0; padding:24px 20px 42px; box-shadow:none; }} .cover {{ min-height:88vh; padding:58px 0; }} h1 {{ font-size:34px; }} h2 {{ font-size:24px; }} .profile {{ grid-template-columns:1fr; }} .summary-row {{ grid-template-columns:76px 1fr; }} table {{ display:block; overflow-x:auto; }} }}
+@media print {{ body {{ background:#fff; }} .page {{ margin:0; padding:0; box-shadow:none; }} .cover {{ min-height:250mm; }} .final-footer {{ display:none; }} }}
 </style></head><body><main class="page">
 <section class="cover"><div class="brand">{esc(brand)}</div><h1>体检报告解读<br>与 1v1 健康管理方案</h1><div class="sub">为 {esc(customer)} 定制 · {esc(report_date)}</div>{html_callout("这份报告想解决的事", text(data.get("cover_subtitle")) or "看懂身体现在的状态，并找到真正做得下去的下一步。", "sand")}<div class="footer">{esc(text(data.get("advisor")) or "健康管理顾问")}</div></section>
 <section><h2>01 · 先看结论</h2><p class="sub">先把最重要的判断放在前面，避免被体检单上的一堆箭头带偏。</p>{profile_block}<div class="summary">{summary_html}</div></section>
@@ -530,6 +533,7 @@ def main() -> int:
     parser.add_argument("input", type=Path, help="内部结构化 JSON 文件")
     parser.add_argument("--out-dir", type=Path, default=None, help="输出目录，默认为输入文件所在目录")
     parser.add_argument("--date", default=None, help="文档日期，格式 YYYY-MM-DD")
+    parser.add_argument("--html-only", action="store_true", help="仅生成 HTML 网页预览")
     parser.add_argument("--pdf", action="store_true", help="同时生成 PDF；失败时保留 DOCX/HTML")
     args = parser.parse_args()
 
@@ -541,11 +545,12 @@ def main() -> int:
     stem = f"{safe_name(text(data['customer_name']))}-{report_date}-体检解读与1v1方案"
     docx_path = out_dir / f"{stem}.docx"
     html_path = out_dir / f"{stem}.html"
-    build_docx(data, docx_path, report_date)
+    if not args.html_only:
+        build_docx(data, docx_path, report_date)
     build_html(data, html_path, report_date)
 
     pdf_path = out_dir / f"{stem}.pdf"
-    if args.pdf:
+    if args.pdf and not args.html_only:
         try:
             with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
                 from weasyprint import HTML
@@ -562,7 +567,8 @@ def main() -> int:
             except Exception as exc:  # pragma: no cover - platform font/runtime failures
                 print(f"PDF 生成未成功，已保留 DOCX/HTML：{exc}", file=sys.stderr)
 
-    print(docx_path)
+    if docx_path.exists() and not args.html_only:
+        print(docx_path)
     print(html_path)
     if pdf_path.exists():
         print(pdf_path)
